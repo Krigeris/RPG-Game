@@ -1,0 +1,65 @@
+[
+  {
+    "Name": "Attack",
+    "Kind": "Attack",
+    "Targeting": "Enemy Single",
+    "Base Delay": 2.5,
+    "Mult": 1.0,
+    "Base MP Cost": 0,
+    "Description": "Basic attack."
+  },
+  {
+    "Name": "Defend",
+    "Kind": "Defend",
+    "Targeting": "Self",
+    "Base Delay": 2.0,
+    "Mult": 1.0,
+    "Base MP Cost": 0,
+    "Description": "1-turn buff: -25% damage taken, x2 regen, +25% defense QTE window."
+  },
+  {
+    "Name": "Quick Jab",
+    "Kind": "Attack",
+    "Targeting": "Enemy Single",
+    "Base Delay": 1.5,
+    "Mult": 0.7,
+    "Base MP Cost": 8,
+    "Description": "Fast, weaker hit."
+  },
+  {
+    "Name": "Heavy Strike",
+    "Kind": "Attack",
+    "Targeting": "Enemy Single",
+    "Base Delay": 4.0,
+    "Mult": 1.8,
+    "Base MP Cost": 18,
+    "Description": "Slow, strong hit."
+  },
+  {
+    "Name": "Rally",
+    "Kind": "Buff",
+    "Targeting": "Ally Single",
+    "Base Delay": 2.8,
+    "Mult": 1.0,
+    "Base MP Cost": 14,
+    "Description": "Buff Power for a duration."
+  },
+  {
+    "Name": "Focus",
+    "Kind": "Buff",
+    "Targeting": "Self",
+    "Base Delay": 2.6,
+    "Mult": 1.0,
+    "Base MP Cost": 12,
+    "Description": "Buff Precision for a duration."
+  },
+  {
+    "Name": "Mend",
+    "Kind": "Heal",
+    "Targeting": "Ally Single",
+    "Base Delay": 3.0,
+    "Mult": 1.2,
+    "Base MP Cost": 16,
+    "Description": "Heal an ally."
+  }
+]

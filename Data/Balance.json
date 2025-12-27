@@ -1,0 +1,20 @@
+{
+  "Enemy QTE Baseline Attack": {
+    "Miss": 0.1,
+    "Hit": 0.75,
+    "Crit": 0.12,
+    "Vital": 0.03
+  },
+  "Enemy QTE Baseline Defense": {
+    "Hit": 0.72,
+    "Defend": 0.18,
+    "Dodge": 0.08,
+    "Counter": 0.02
+  },
+  "Enemy QTE Shift Strength": 0.22,
+  "Precision Ratio Clamp Min": 0.6,
+  "Precision Ratio Clamp Max": 1.6,
+  "QTE Ring Speed": 420.0,
+  "QTE Vital Zone Min Width": 10.0,
+  "QTE Crit Zone Min Width": 18.0
+}

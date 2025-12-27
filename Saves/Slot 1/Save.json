@@ -1,0 +1,30 @@
+{
+  "Slot": "Slot 1",
+  "Gold": 0,
+  "Party": [
+    {
+      "Name": "Hero",
+      "Level": 6,
+      "Xp": 0
+    },
+    {
+      "Name": "Rogue",
+      "Level": 6,
+      "Xp": 0
+    }
+  ],
+  "Inventory": [
+    {
+      "Name": "Potion",
+      "Amount": 2
+    },
+    {
+      "Name": "Ether",
+      "Amount": 1
+    }
+  ],
+  "Area": "Starter Field",
+  "Options": {
+    "Difficulty": "Normal"
+  }
+}

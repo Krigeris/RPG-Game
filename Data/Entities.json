@@ -1,0 +1,93 @@
+[
+  {
+    "Name": "Hero",
+    "Level": 6,
+    "Weights": {
+      "Vitality": 0.5,
+      "Power": 0.25,
+      "Dexterity": 0.15,
+      "Precision": 0.1
+    },
+    "Abilities": [
+      "Attack",
+      "Defend",
+      "Quick Jab",
+      "Heavy Strike",
+      "Mend",
+      "Focus",
+      "Rally"
+    ],
+    "Learnset": [],
+    "Drop Table": []
+  },
+  {
+    "Name": "Rogue",
+    "Level": 6,
+    "Weights": {
+      "Vitality": 0.42,
+      "Power": 0.23,
+      "Dexterity": 0.25,
+      "Precision": 0.1
+    },
+    "Abilities": [
+      "Attack",
+      "Defend",
+      "Quick Jab",
+      "Focus"
+    ],
+    "Learnset": [],
+    "Drop Table": []
+  },
+  {
+    "Name": "Green Slime",
+    "Level": 4,
+    "Weights": {
+      "Vitality": 0.58,
+      "Power": 0.2,
+      "Dexterity": 0.14,
+      "Precision": 0.08
+    },
+    "Abilities": [
+      "Attack",
+      "Defend"
+    ],
+    "Learnset": [],
+    "Drop Table": [
+      {
+        "Quantity": 1,
+        "Item": "Potion",
+        "Chance Numerator": 1,
+        "Chance Denominator": 6
+      }
+    ]
+  },
+  {
+    "Name": "Goblin",
+    "Level": 5,
+    "Weights": {
+      "Vitality": 0.44,
+      "Power": 0.28,
+      "Dexterity": 0.18,
+      "Precision": 0.1
+    },
+    "Abilities": [
+      "Attack",
+      "Quick Jab"
+    ],
+    "Learnset": [],
+    "Drop Table": [
+      {
+        "Quantity": 1,
+        "Item": "Iron Sword",
+        "Chance Numerator": 1,
+        "Chance Denominator": 10
+      },
+      {
+        "Quantity": 1,
+        "Item": "Ether",
+        "Chance Numerator": 1,
+        "Chance Denominator": 8
+      }
+    ]
+  }
+]

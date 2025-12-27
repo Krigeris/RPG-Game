@@ -1,0 +1,20 @@
+[
+  {
+    "Name": "Potion",
+    "Value": 25,
+    "Tier": 1,
+    "Description": "Restores HP (uses QTE)."
+  },
+  {
+    "Name": "Ether",
+    "Value": 35,
+    "Tier": 1,
+    "Description": "Restores MP (uses QTE)."
+  },
+  {
+    "Name": "Iron Sword",
+    "Value": 120,
+    "Tier": 2,
+    "Description": "A basic blade. (placeholder for equipment later)"
+  }
+]

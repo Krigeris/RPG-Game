@@ -1,0 +1,10 @@
+[
+  {
+    "Name": "Starter Field",
+    "Description": "A simple test area.",
+    "Encounters": [
+      "Field Encounter 1",
+      "Field Encounter 2"
+    ]
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "Name": "Field Encounter 1",
+    "Area": "Starter Field",
+    "Enemy Party": [
+      "Green Slime",
+      "Green Slime"
+    ]
+  },
+  {
+    "Name": "Field Encounter 2",
+    "Area": "Starter Field",
+    "Enemy Party": [
+      "Goblin",
+      "Green Slime"
+    ]
+  }
+]
