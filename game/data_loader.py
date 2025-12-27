@@ -1,13 +1,6 @@
 import os
 
-from .utils import (
-    BaselineAbilityDelay,
-    DataFolder,
-    EnemyQteBaselineAttack,
-    EnemyQteShiftStrength,
-    EnsureFolder,
-    SaveJson,
-)
+from .utils import BaselineAbilityDelay, DataFolder, EnsureFolder, SaveJson
 
 
 def CreateDefaultData():
@@ -22,8 +15,8 @@ def CreateDefaultData():
 
     if not os.path.exists(items_path):
         items = [
-            {"Name": "Potion", "Value": 25, "Tier": 1, "Description": "Restores HP (uses QTE)."},
-            {"Name": "Ether", "Value": 35, "Tier": 1, "Description": "Restores MP (uses QTE)."},
+            {"Name": "Potion", "Value": 25, "Tier": 1, "Description": "Restores HP."},
+            {"Name": "Ether", "Value": 35, "Tier": 1, "Description": "Restores MP."},
             {
                 "Name": "Iron Sword",
                 "Value": 120,
@@ -51,7 +44,7 @@ def CreateDefaultData():
                 "Base Delay": 2.0,
                 "Mult": 1.0,
                 "Base MP Cost": 0,
-                "Description": "1-turn buff: -25% damage taken, x2 regen, +25% defense QTE window.",
+                "Description": "1-turn buff: -25% damage taken, x2 regen, doubles defensive rolls.",
             },
             {
                 "Name": "Quick Jab",
@@ -171,12 +164,10 @@ def CreateDefaultData():
 
     if not os.path.exists(balance_path):
         balance = {
-            "Enemy QTE Baseline Attack": EnemyQteBaselineAttack,
-            "Enemy QTE Shift Strength": EnemyQteShiftStrength,
-            "Precision Ratio Clamp Min": 0.60,
-            "Precision Ratio Clamp Max": 1.60,
-            "QTE Ring Speed": 420.0,
-            "QTE Vital Zone Min Width": 10.0,
-            "QTE Crit Zone Min Width": 18.0,
+            "Precision Ratio Clamp Min": 0.25,
+            "Precision Ratio Clamp Max": 4.00,
+            "Baseline Ability Delay": BaselineAbilityDelay,
+            "Turn Regen Percent": 0.01,
+            "Damage Variance": "80-120%",
         }
         SaveJson(balance_path, balance)

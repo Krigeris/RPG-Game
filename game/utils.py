@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import subprocess
 from typing import Any
 
 # ============================================================
@@ -28,21 +29,6 @@ TurnRegenPercent = 0.01
 # Defend buff
 DefendDamageTakenMultiplier = 0.75
 DefendRegenMultiplier = 2.0
-DefendDefenseQteWindowMultiplier = 1.25
-
-# QTE multipliers (tunable)
-QteMultipliersAttack = {
-    "Miss": 0.0,
-    "Hit": 1.0,
-    "Crit": 1.35,
-    "Vital": 1.85,
-}
-
-# Enemy "virtual QTE" baseline distribution at precision ratio ~ 1.0
-EnemyQteBaselineAttack = {"Miss": 0.10, "Hit": 0.75, "Crit": 0.12, "Vital": 0.03}
-
-# Precision ratio influence strength (tunable)
-EnemyQteShiftStrength = 0.22  # higher makes ratio matter more
 
 # MP cost scaling: BaseMpCost * (CasterVitality/Scale)^Exponent
 MpVitalityScale = 10000.0
@@ -104,3 +90,12 @@ def PowRatio(attacker_stat: float, defender_stat: float) -> float:
 
 def RoundTenths(x: float) -> float:
     return round(x * 10.0) / 10.0
+
+
+def GetBuildLabel() -> str:
+    """Return a short git hash for UI display; fall back to "unknown" if unavailable."""
+    try:
+        rev = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL)
+        return rev.decode().strip()
+    except Exception:
+        return "unknown"

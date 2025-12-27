@@ -3,18 +3,21 @@
     "Name": "Potion",
     "Value": 25,
     "Tier": 1,
-    "Description": "Restores HP (uses QTE)."
+    "Type": "Healing",
+    "Description": "Restores HP."
   },
   {
     "Name": "Ether",
     "Value": 35,
     "Tier": 1,
-    "Description": "Restores MP (uses QTE)."
+    "Type": "Healing",
+    "Description": "Restores MP."
   },
   {
     "Name": "Iron Sword",
     "Value": 120,
     "Tier": 2,
+    "Type": "Weapon",
     "Description": "A basic blade. (placeholder for equipment later)"
   }
 ]
