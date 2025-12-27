@@ -674,15 +674,7 @@ class Game:
             f"{Desc}",
         ]
 
-    def AbilityTooltipLines(
-        self,
-        Actor: BattleEntity,
-        AbilityObj: Ability,
-        disabled_reason: str = "",
-        DisabledReason: str = "",
-    ) -> List[str]:
-        # Accept both snake_case and PascalCase keyword names for backward compatibility.
-        effective_disabled_reason = disabled_reason or DisabledReason
+    def AbilityTooltipLines(self, Actor: BattleEntity, AbilityObj: Ability, DisabledReason: str="") -> List[str]:
         Lines = [
             f"{AbilityObj.Name}",
             f"{AbilityObj.Kind} • {AbilityObj.Targeting}",
@@ -696,9 +688,9 @@ class Game:
         if AbilityObj.Kind == "Passive":
             Lines.append("")
             Lines.append("(Passive)")
-        if effective_disabled_reason:
+        if DisabledReason:
             Lines.append("")
-            Lines.append(effective_disabled_reason)
+            Lines.append(DisabledReason)
         return Lines
 
     # ============================================================
