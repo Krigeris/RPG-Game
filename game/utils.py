@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import subprocess
 from typing import Any
 
 # ============================================================
@@ -89,3 +90,12 @@ def PowRatio(attacker_stat: float, defender_stat: float) -> float:
 
 def RoundTenths(x: float) -> float:
     return round(x * 10.0) / 10.0
+
+
+def GetBuildLabel() -> str:
+    """Return a short git hash for UI display; fall back to "unknown" if unavailable."""
+    try:
+        rev = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL)
+        return rev.decode().strip()
+    except Exception:
+        return "unknown"
