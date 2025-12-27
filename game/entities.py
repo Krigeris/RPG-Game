@@ -4,7 +4,6 @@ from typing import Dict, List, Tuple
 from .utils import (
     Clamp,
     DefendDamageTakenMultiplier,
-    DefendDefenseQteWindowMultiplier,
     DefendRegenMultiplier,
     FullBarDrainSeconds,
     TurnRegenPercent,
@@ -53,6 +52,8 @@ class BattleEntity:
 
     CurrentHp: float = 1.0
     CurrentMp: float = 1.0
+    Atp: float = 0.0
+    AtpRate: float = 0.0
     NextActionTime: float = 0.0
     Statuses: List[StatusEffect] = field(default_factory=list)
 
@@ -89,19 +90,18 @@ class BattleEntity:
             for s in self.Statuses
         )
 
-    def GetDefendMultipliers(self) -> Tuple[float, float, float]:
+    def GetDefendMultipliers(self) -> Tuple[float, float]:
         if self.HasStatus("Defend"):
             return (
                 DefendDamageTakenMultiplier,
                 DefendRegenMultiplier,
-                DefendDefenseQteWindowMultiplier,
             )
-        return (1.0, 1.0, 1.0)
+        return (1.0, 1.0)
 
     def ApplyTurnRegen(self):
         if not self.Alive:
             return
-        _, regen_mult, _ = self.GetDefendMultipliers()
+        _, regen_mult = self.GetDefendMultipliers()
         hp_gain = self.MaxHp() * TurnRegenPercent * regen_mult
         mp_gain = self.MaxMp() * TurnRegenPercent * regen_mult
         self.HealHp(hp_gain)
@@ -132,7 +132,7 @@ class BattleEntity:
     def TakeDamage(self, amount: float):
         if not self.Alive:
             return
-        damage_taken_mult, _, _ = self.GetDefendMultipliers()
+        damage_taken_mult, _ = self.GetDefendMultipliers()
         amount = max(0.0, amount) * damage_taken_mult
         self.CurrentHp = max(0.0, self.CurrentHp - amount)
         self.BeginLagHp(self.CurrentHp)

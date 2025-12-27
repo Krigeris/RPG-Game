@@ -28,21 +28,6 @@ TurnRegenPercent = 0.01
 # Defend buff
 DefendDamageTakenMultiplier = 0.75
 DefendRegenMultiplier = 2.0
-DefendDefenseQteWindowMultiplier = 1.25
-
-# QTE multipliers (tunable)
-QteMultipliersAttack = {
-    "Miss": 0.0,
-    "Hit": 1.0,
-    "Crit": 1.35,
-    "Vital": 1.85,
-}
-
-# Enemy "virtual QTE" baseline distribution at precision ratio ~ 1.0
-EnemyQteBaselineAttack = {"Miss": 0.10, "Hit": 0.75, "Crit": 0.12, "Vital": 0.03}
-
-# Precision ratio influence strength (tunable)
-EnemyQteShiftStrength = 0.22  # higher makes ratio matter more
 
 # MP cost scaling: BaseMpCost * (CasterVitality/Scale)^Exponent
 MpVitalityScale = 10000.0
