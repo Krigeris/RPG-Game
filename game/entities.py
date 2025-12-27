@@ -53,6 +53,8 @@ class BattleEntity:
 
     CurrentHp: float = 1.0
     CurrentMp: float = 1.0
+    Atp: float = 0.0
+    AtpRate: float = 0.0
     NextActionTime: float = 0.0
     Statuses: List[StatusEffect] = field(default_factory=list)
 
