@@ -1,7 +1,7 @@
 import json
 import os
 import random
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pygame
 
@@ -674,22 +674,7 @@ class Game:
             f"{Desc}",
         ]
 
-    def AbilityTooltipLines(
-        self,
-        Actor: BattleEntity,
-        AbilityObj: Ability,
-        disabled_reason: str = "",
-        DisabledReason: str = "",
-        **_: Any,
-    ) -> List[str]:
-        """Return tooltip lines for an ability.
-
-        Accepts both legacy and new keyword names, and safely ignores
-        unexpected keywords to avoid runtime errors from out-of-sync
-        call sites.
-        """
-        # Accept both snake_case and PascalCase keyword names for backward compatibility.
-        effective_disabled_reason = disabled_reason or DisabledReason
+    def AbilityTooltipLines(self, Actor: BattleEntity, AbilityObj: Ability, DisabledReason: str="") -> List[str]:
         Lines = [
             f"{AbilityObj.Name}",
             f"{AbilityObj.Kind} • {AbilityObj.Targeting}",
@@ -703,9 +688,9 @@ class Game:
         if AbilityObj.Kind == "Passive":
             Lines.append("")
             Lines.append("(Passive)")
-        if effective_disabled_reason:
+        if DisabledReason:
             Lines.append("")
-            Lines.append(effective_disabled_reason)
+            Lines.append(DisabledReason)
         return Lines
 
     # ============================================================
@@ -1067,10 +1052,7 @@ class Game:
                                         # not your turn
                                         if team == "Player":
                                             disabled = "Not your turn"
-                                # Pass the disabled reason positionally so older signatures without
-                                # the ``disabled_reason`` keyword remain compatible.
-                                reason = "" if disabled in ("(Passive)", "") else disabled
-                                self.Tooltip.Show(mp, self.AbilityTooltipLines(actor, ab, reason))
+                                self.Tooltip.Show(mp, self.AbilityTooltipLines(actor, ab, disabled_reason=("" if disabled in ("(Passive)", "") else disabled)))
                                 return
 
         # Status hover under bars
