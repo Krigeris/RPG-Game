@@ -15,7 +15,7 @@
     "Base Delay": 2.0,
     "Mult": 1.0,
     "Base MP Cost": 0,
-    "Description": "1-turn buff: -25% damage taken, x2 regen, +25% defense QTE window."
+    "Description": "1-turn buff: -25% damage taken, x2 regen, doubles defensive rolls."
   },
   {
     "Name": "Quick Jab",

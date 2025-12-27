@@ -3,13 +3,13 @@
     "Name": "Potion",
     "Value": 25,
     "Tier": 1,
-    "Description": "Restores HP (uses QTE)."
+    "Description": "Restores HP."
   },
   {
     "Name": "Ether",
     "Value": 35,
     "Tier": 1,
-    "Description": "Restores MP (uses QTE)."
+    "Description": "Restores MP."
   },
   {
     "Name": "Iron Sword",
