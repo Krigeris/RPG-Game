@@ -1052,7 +1052,7 @@ class Game:
                                         # not your turn
                                         if team == "Player":
                                             disabled = "Not your turn"
-                                self.Tooltip.Show(mp, self.AbilityTooltipLines(actor, ab, disabled_reason=("" if disabled in ("(Passive)", "") else disabled)))
+                                self.Tooltip.Show(mp, self.AbilityTooltipLines(actor, ab, DisabledReason=("" if disabled in ("(Passive)", "") else disabled)))
                                 return
 
         # Status hover under bars
