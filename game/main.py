@@ -766,7 +766,13 @@ class Game:
                     self.DevScroll = 0
                     return
 
-                # Select inspect entity by clicking boxes
+                # Target selection click
+                if self.SubMode == "Choose Target":
+                    if self.ClickTargetAt(MousePos):
+                        self.BeginPlayerQte()
+                        return
+
+                # Select inspect entity by clicking boxes (after target selection attempts)
                 Clicked = self.ClickEntitySelect(MousePos)
                 if Clicked:
                     return
@@ -774,12 +780,6 @@ class Game:
                 # Ability click in inspect panel if player turn
                 if self.SubMode == "Choose Action":
                     if self.ClickInspectAbility(MousePos):
-                        return
-
-                # Target selection click
-                if self.SubMode == "Choose Target":
-                    if self.ClickTargetAt(MousePos):
-                        self.BeginPlayerQte()
                         return
 
             if Event.type == pygame.MOUSEWHEEL:
@@ -1052,7 +1052,7 @@ class Game:
                                         # not your turn
                                         if team == "Player":
                                             disabled = "Not your turn"
-                                self.Tooltip.Show(mp, self.AbilityTooltipLines(actor, ab, disabled_reason=("" if disabled in ("(Passive)", "") else disabled)))
+                                self.Tooltip.Show(mp, self.AbilityTooltipLines(actor, ab, DisabledReason=("" if disabled in ("(Passive)", "") else disabled)))
                                 return
 
         # Status hover under bars
