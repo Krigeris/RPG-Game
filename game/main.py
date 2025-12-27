@@ -14,7 +14,7 @@ from .utils import *
 class Game:
     def __init__(self):
         pygame.init()
-        pygame.display.set_caption("ATB Battle")
+        pygame.display.set_caption("QTE ATB Battle v2")
         self.Screen = pygame.display.set_mode((ScreenWidth, ScreenHeight))
         self.Clock = pygame.time.Clock()
 
@@ -23,10 +23,9 @@ class Game:
         self.FontBig = pygame.font.Font(FontName, 28)
         self.FontHuge = pygame.font.Font(FontName, 40)
 
-        self.BuildLabel = GetBuildLabel()
-
         CreateDefaultData()
 
+        self.QteSpeed = 420.0  # needed before LoadDatabase
         self.LoadDatabase()
 
         self.Tooltip = Tooltip()
@@ -42,7 +41,7 @@ class Game:
             Button(pygame.Rect(520, 370, 240, 48), "Start Battle"),
         ]
 
-        self.DevButton = Button(pygame.Rect(ScreenWidth-110, ScreenHeight-50, 100, 36), "DEV")
+        self.DevButton = Button(pygame.Rect(ScreenWidth-110, 10, 100, 36), "DEV")
 
         # Battle runtime
         self.BattleTime = 0.0
@@ -65,16 +64,15 @@ class Game:
         self.TargetTeam: str = "Enemy"
         self.SelectedTargetIndex: int = 0
 
+        # QTE runtime
+        self.QteMode: Optional[str] = None
+        self.QteResult: Optional[str] = None
+        self.QtePressed = False
+        self.QteRadius = 0.0
+        self.QteRadii = {}
+
         # Inventory scrolling
         self.InventoryScroll = 0
-        self.InventorySortKey = "Name"
-        self.LogScroll = 0
-        self.UseItemButtonRect: Optional[pygame.Rect] = None
-
-        # Side tabs
-        self.SideTabs = ["Selection", "Inventory", "Log"]
-        self.ActiveSideTab = "Selection"
-        self.SelectedItemName: Optional[str] = None
 
         # Dev Menu
         self.DevTab = "Entities"
@@ -97,6 +95,7 @@ class Game:
         self.EncountersByName = {C["Name"]: C for C in self.EncountersDb}
         self.AreasByName = {A["Name"]: A for A in self.AreasDb}
 
+        self.QteSpeed = float(self.BalanceDb.get("QTE Ring Speed", self.QteSpeed))
 
     def SaveDatabase(self):
         SaveJson(os.path.join(DataFolder, "Entities.json"), self.EntitiesDb)
@@ -116,10 +115,7 @@ class Game:
         Path = self.SavePath(SlotName)
         if not os.path.exists(Path):
             return None
-        Save = LoadJson(Path, None)
-        if Save is not None and "Log" not in Save:
-            Save["Log"] = []
-        return Save
+        return LoadJson(Path, None)
 
     def CreateNewSave(self, SlotName: str):
         EnsureFolder(os.path.join(SavesFolder, SlotName))
@@ -135,8 +131,7 @@ class Game:
                 {"Name": "Ether", "Amount": 1},
             ],
             "Area": "Starter Field",
-            "Options": {"Difficulty": "Normal"},
-            "Log": [],
+            "Options": {"Difficulty": "Normal"}
         }
         SaveJson(self.SavePath(SlotName), Save)
         self.ActiveSave = Save
@@ -146,29 +141,6 @@ class Game:
             return
         EnsureFolder(os.path.join(SavesFolder, self.ActiveSave["Slot"]))
         SaveJson(self.SavePath(self.ActiveSave["Slot"]), self.ActiveSave)
-
-    def GetLog(self) -> List[str]:
-        if not self.ActiveSave:
-            return []
-        if "Log" not in self.ActiveSave:
-            self.ActiveSave["Log"] = []
-        return self.ActiveSave["Log"]
-
-    def AppendLog(self, Line: str):
-        log = self.GetLog()
-        if log:
-            last = log[-1]
-            if last.startswith(Line):
-                if last.endswith(")") and " (x" in last:
-                    try:
-                        count = int(last.split(" (x")[-1].rstrip(")"))
-                    except ValueError:
-                        count = 1
-                    log[-1] = f"{Line} (x{count + 1})"
-                else:
-                    log[-1] = f"{Line} (x2)"
-                return
-        log.append(Line)
 
     # ============================================================
     # Battle Setup
@@ -229,14 +201,13 @@ class Game:
         # Default inspect selection
         self.InspectSelection = ("Player", 0)
 
-        # Initialize ATP so everyone is immediately eligible; order is settled by dexterity
+        # Initialize starting next-action times using dex bias
         All = self.PlayerParty + self.EnemyParty
+        AvgDex = sum(e.Stat("Dexterity") for e in All) / max(1, len(All))
         for E in All:
-            E.Atp = 100.0
-            E.AtpRate = self.ComputeAtpRate(E, None)
-
-        enemy_names = ", ".join(E.Name for E in self.EnemyParty) if self.EnemyParty else "Unknown"
-        self.AppendLog(f"Battle started vs {enemy_names}")
+            DexRatio = PowRatio(E.Stat("Dexterity"), AvgDex)
+            StartDelay = RoundTenths(max(0.5, 5.0 / max(0.15, DexRatio)))
+            E.NextActionTime = StartDelay
 
         self.Mode = "Battle"
         self.SubMode = "Free"
@@ -317,91 +288,7 @@ class Game:
             X=R.centerx, Y=R.y - 10, Text=Text, Color=Color, Size=Size
         ))
 
-    def GuaranteedOutcome(self) -> Dict:
-        return {
-            "Name": "Hit",
-            "Multiplier": 1.0,
-            "Color": (240, 240, 240),
-            "Size": 22,
-            "Roll": None,
-            "TotalWeight": None,
-            "Weights": None,
-            "PrecisionRatio": 1.0,
-        }
-
-    def AccuracyOutcome(self, Attacker: BattleEntity, Defender: BattleEntity) -> Dict:
-        base_weights = {
-            "Counter": 5,
-            "Dodge": 10,
-            "Block": 20,
-            "Hit": 35,
-            "Crit": 20,
-            "Vital": 10,
-        }
-
-        precision_ratio = PowRatio(self.EffectiveStat(Attacker, "Precision"), self.EffectiveStat(Defender, "Precision"))
-        precision_ratio = Clamp(precision_ratio, 0.25, 4.0)
-        attacker_scale = precision_ratio
-        defender_scale = 1.0 / precision_ratio if precision_ratio > 0 else 1.0
-
-        if Defender.HasStatus("Defend"):
-            defender_scale *= 2.0
-
-        weights = {
-            "Counter": base_weights["Counter"] * defender_scale,
-            "Dodge": base_weights["Dodge"] * defender_scale,
-            "Block": base_weights["Block"] * defender_scale,
-            "Hit": base_weights["Hit"] * attacker_scale,
-            "Crit": base_weights["Crit"] * attacker_scale,
-            "Vital": base_weights["Vital"] * attacker_scale,
-        }
-
-        total = sum(weights.values())
-        roll = random.uniform(0, total)
-        upto = 0.0
-        outcome = "Hit"
-        for name, w in weights.items():
-            upto += w
-            if roll <= upto:
-                outcome = name
-                break
-
-        mult_map = {
-            "Counter": 0.0,
-            "Dodge": 0.0,
-            "Block": 0.5,
-            "Hit": 1.0,
-            "Crit": 1.5,
-            "Vital": 2.0,
-        }
-        color_map = {
-            "Counter": (150, 120, 200),
-            "Dodge": (120, 230, 120),
-            "Block": (120, 170, 255),
-            "Hit": (240, 240, 240),
-            "Crit": (255, 235, 80),
-            "Vital": (255, 80, 80),
-        }
-        size_map = {
-            "Counter": 22,
-            "Dodge": 22,
-            "Block": 22,
-            "Hit": 22,
-            "Crit": 28,
-            "Vital": 32,
-        }
-        return {
-            "Name": outcome,
-            "Multiplier": mult_map.get(outcome, 1.0),
-            "Color": color_map.get(outcome, (240, 240, 240)),
-            "Size": size_map.get(outcome, 22),
-            "Roll": roll,
-            "TotalWeight": total,
-            "Weights": weights,
-            "PrecisionRatio": precision_ratio,
-        }
-
-    def ApplyAbility(self, Caster: BattleEntity, Target: BattleEntity, AbilityObj: Ability, OutcomeData: Dict, AllowCounter: bool=True):
+    def ApplyAbility(self, Caster: BattleEntity, Target: BattleEntity, AbilityObj: Ability, QteOutcome: str):
         if AbilityObj.Kind == "Passive":
             return
 
@@ -412,68 +299,52 @@ class Game:
             ))
             return
 
-        outcome = OutcomeData.get("Name", "Hit") if OutcomeData else "Hit"
-        mult = OutcomeData.get("Multiplier", 1.0) if OutcomeData else 1.0
-        color = OutcomeData.get("Color", (240,240,240)) if OutcomeData else (240,240,240)
-        size = OutcomeData.get("Size", 22) if OutcomeData else 22
-        roll = OutcomeData.get("Roll") if OutcomeData else None
-        total_weight = OutcomeData.get("TotalWeight") if OutcomeData else None
-        weights = OutcomeData.get("Weights") if OutcomeData else None
-        precision_ratio = OutcomeData.get("PrecisionRatio", 1.0) if OutcomeData else 1.0
+        QteMult = QteMultipliersAttack.get(QteOutcome, 1.0)
 
         if AbilityObj.Kind == "Attack":
             Base = self.EffectiveStat(Caster, "Power") / 5.0
             Ratio = PowRatio(self.EffectiveStat(Caster, "Power"), self.EffectiveStat(Target, "Power"))
-            Damage = Base * Ratio * mult * AbilityObj.Mult
+            Damage = Base * Ratio * QteMult * AbilityObj.Mult
             if AddMpCostToOutput:
                 Damage += MpCost
-            variance = random.uniform(0.8, 1.2)
-            Damage *= variance
             Damage = max(0.0, round(Damage))
             Target.TakeDamage(Damage)
-            self.SpawnFloatOnEntity(Target, f"{FormatNumber(Damage)}", color, size)
 
-            weight_str = ""
-            if weights:
-                weight_str = ", ".join([f"{k}:{v:.1f}" for k,v in weights.items()])
-                weight_str = f" weights[{weight_str}]"
-            roll_str = f" roll {roll:.1f}/{total_weight:.1f}" if roll is not None and total_weight else ""
-            self.AppendLog(
-                f"{Caster.Name} used {AbilityObj.Name} on {Target.Name}: {outcome}"
-                f" for {FormatNumber(Damage)} dmg (precision {precision_ratio:.2f}{roll_str}{weight_str} var {variance:.2f})"
-            )
-
-            if outcome == "Counter" and AllowCounter:
-                counter_ability = self.GetAbility("Attack")
-                self.SpawnFloatOnEntity(Caster, "Counter!", (180, 120, 220), 24)
-                self.ApplyAbility(Target, Caster, counter_ability, self.GuaranteedOutcome(), AllowCounter=False)
+            Color = (240,240,240)
+            Size = 22
+            if QteOutcome == "Crit":
+                Color = (255, 235, 80)
+                Size = 28
+            elif QteOutcome == "Vital":
+                Color = (255, 80, 80)
+                Size = 36
+            elif QteOutcome == "Miss":
+                Color = (200,200,200)
+                Size = 20
+            self.SpawnFloatOnEntity(Target, f"{FormatNumber(Damage)}", Color, Size)
 
         elif AbilityObj.Kind == "Heal":
             Base = self.EffectiveStat(Caster, "Power") / 5.0
             Ratio = PowRatio(self.EffectiveStat(Caster, "Vitality"), self.EffectiveStat(Target, "Vitality"))
-            Heal = Base * Ratio * AbilityObj.Mult
+            Heal = Base * Ratio * QteMult * AbilityObj.Mult
             if AddMpCostToOutput:
                 Heal += MpCost
             Heal = max(0.0, round(Heal))
             Target.HealHp(Heal)
-            self.SpawnFloatOnEntity(Target, f"+{FormatNumber(Heal)}", (70,255,110), 28)
-
-            self.AppendLog(f"{Caster.Name} used {AbilityObj.Name} on {Target.Name}: healed {FormatNumber(Heal)} HP")
+            self.SpawnFloatOnEntity(Target, f"+{FormatNumber(Heal)}", (70,255,110), 28 if QteOutcome != "Miss" else 20)
 
         elif AbilityObj.Kind == "Defend":
             self.AddOrExtendStatusTurns(
                 Caster,
                 "Defend",
                 1,
-                Description="1 turn: -25% damage taken, x2 regen, doubles defense weights."
+                Description="1 turn: -25% damage taken, x2 regen, +25% defense QTE window."
             )
-
-            self.AppendLog(f"{Caster.Name} is defending: doubles defensive rolls for 1 turn")
 
         elif AbilityObj.Kind == "Buff":
             BaseDuration = 6.0
             DurRatio = PowRatio(self.EffectiveStat(Caster, "Vitality"), self.EffectiveStat(Target, "Vitality"))
-            Duration = RoundTenths(BaseDuration * DurRatio)
+            Duration = RoundTenths(BaseDuration * DurRatio * QteMult)
 
             if AbilityObj.Name == "Rally":
                 self.AddTimedBuff(Target, "Rally (Power +20%)", Duration, Description="Power +20%.")
@@ -482,73 +353,108 @@ class Game:
             else:
                 self.AddTimedBuff(Target, f"{AbilityObj.Name} (Buff)", Duration, Description=AbilityObj.Description)
 
-            self.AppendLog(f"{Caster.Name} used {AbilityObj.Name} on {Target.Name}: duration {Duration:.1f}s")
+    # ============================================================
+    # QTE (Ring)
+    # ============================================================
 
-    def UseSelectedItem(self):
-        if not self.SelectedItemName or not self.ActiveSave:
-            return
-        if not (self.SubMode == "Choose Action" and self.ActiveTeam == "Player"):
-            return
-        user = self.PlayerParty[self.ActiveEntityIndex]
-        target = user
-        if self.InspectSelection and self.InspectSelection[0] == "Player":
-            maybe = self.GetEntityByTeamIndex("Player", self.InspectSelection[1])
-            if maybe:
-                target = maybe
+    def BeginQte(self, Attacker: BattleEntity, Defender: BattleEntity):
+        self.QteMode = "Attack"
+        self.QteResult = None
+        self.QtePressed = False
 
-        if not self.ConsumeInventoryItem(self.SelectedItemName, 1):
-            return
+        CenterRadius = 18.0
+        OuterRadius = 120.0
 
-        applied = False
-        item_obj = self.ItemsByName.get(self.SelectedItemName, {})
-        if self.SelectedItemName == "Potion":
-            heal = max(1, int(target.MaxHp() * 0.3))
-            target.HealHp(heal)
-            self.SpawnFloatOnEntity(target, f"+{FormatNumber(heal)}", (90, 220, 120), 26)
-            self.AppendLog(f"{user.Name} used {self.SelectedItemName} on {target.Name}: healed {FormatNumber(heal)} HP")
-            applied = True
-        elif self.SelectedItemName == "Ether":
-            mp_gain = max(1, int(target.MaxMp() * 0.25))
-            target.RestoreMp(mp_gain)
-            self.SpawnFloatOnEntity(target, f"+{FormatNumber(mp_gain)} MP", (120, 200, 255), 24)
-            self.AppendLog(f"{user.Name} used {self.SelectedItemName} on {target.Name}: restored {FormatNumber(mp_gain)} MP")
-            applied = True
+        PrecRatioRaw = PowRatio(self.EffectiveStat(Attacker, "Precision"), self.EffectiveStat(Defender, "Precision"))
+        PrecMin = float(self.BalanceDb.get("Precision Ratio Clamp Min", 0.60))
+        PrecMax = float(self.BalanceDb.get("Precision Ratio Clamp Max", 1.60))
+        PrecRatio = Clamp(PrecRatioRaw, PrecMin, PrecMax)
+
+        WindowMult = PrecRatio
+
+        VitalMin = float(self.BalanceDb.get("QTE Vital Zone Min Width", 10.0))
+        CritMin = float(self.BalanceDb.get("QTE Crit Zone Min Width", 18.0))
+
+        VitalWidth = max(VitalMin, 14.0 * WindowMult)
+        CritWidth = max(CritMin, 24.0 * WindowMult)
+
+        VitalOuter = CenterRadius + VitalWidth
+        CritOuter = VitalOuter + CritWidth
+        HitOuter = OuterRadius
+
+        self.QteRadii = {
+            "Center": CenterRadius,
+            "VitalOuter": VitalOuter,
+            "CritOuter": CritOuter,
+            "HitOuter": HitOuter
+        }
+        self.QteRadius = HitOuter + 30.0  # start outside hit ring
+
+    def ResolveQtePress(self) -> str:
+        R = self.QteRadius
+        HitOuter = self.QteRadii["HitOuter"]
+        CritOuter = self.QteRadii["CritOuter"]
+        VitalOuter = self.QteRadii["VitalOuter"]
+        Center = self.QteRadii["Center"]
+
+        # Your rule:
+        # - undershoot (before entering hit): Miss
+        # - overshoot (after vital): regular Hit
+        if R > HitOuter:
+            return "Miss"
+        if R <= Center:
+            return "Hit"
+        if R <= VitalOuter:
+            return "Vital"
+        if R <= CritOuter:
+            return "Crit"
+        return "Hit"
+
+    def TickQte(self, Dt: float):
+        if not self.QteMode:
+            return
+        self.QteRadius -= self.QteSpeed * Dt
+        if self.QteRadius <= 0 and not self.QtePressed:
+            self.QteResult = "Hit"
+            self.QtePressed = True
+
+    # ============================================================
+    # Enemy Virtual QTE
+    # ============================================================
+
+    def ChooseFromProbabilities(self, ProbDict: Dict[str, float]) -> str:
+        Roll = random.random()
+        Acc = 0.0
+        for K, V in ProbDict.items():
+            Acc += V
+            if Roll <= Acc:
+                return K
+        return list(ProbDict.keys())[-1]
+
+    def EnemyVirtualQteAttack(self, Attacker: BattleEntity, Defender: BattleEntity) -> str:
+        Strength = float(self.BalanceDb.get("Enemy QTE Shift Strength", EnemyQteShiftStrength))
+        Base = dict(self.BalanceDb.get("Enemy QTE Baseline Attack", EnemyQteBaselineAttack))
+        PrecRatio = PowRatio(self.EffectiveStat(Attacker, "Precision"), self.EffectiveStat(Defender, "Precision"))
+        Shift = Clamp((PrecRatio - 1.0) * Strength, -0.45, 0.45)
+
+        HitTake = min(Base["Hit"], abs(Shift))
+        if Shift > 0:
+            Base["Hit"] -= HitTake
+            Base["Crit"] += HitTake * 0.70
+            Base["Vital"] += HitTake * 0.30
         else:
-            self.AppendLog(f"{user.Name} used {self.SelectedItemName}: {item_obj.get('Description', 'No effect recorded')}")
-            applied = True
+            Base["Hit"] -= HitTake
+            Base["Miss"] += HitTake
 
-        if applied:
-            dummy_ability = self.GetAbility("Attack")
-            self.CompleteActionAndScheduleNext(user, target, dummy_ability)
-            self.SelectedAbility = None
-            self.SubMode = "Free"
-            self.BattleFrozen = False
-            if all(not e.Alive for e in self.EnemyParty):
-                self.EndBattle(PlayerWon=True)
-            if all(not e.Alive for e in self.PlayerParty):
-                self.EndBattle(PlayerWon=False)
+        Total = sum(max(0.0, v) for v in Base.values())
+        if Total <= 0:
+            return "Hit"
+        Norm = {k: max(0.0, v) / Total for k, v in Base.items()}
+        return self.ChooseFromProbabilities(Norm)
 
     # ============================================================
     # Turn Flow
     # ============================================================
-
-    def OpposingTeam(self, Team: str) -> str:
-        return "Enemy" if Team == "Player" else "Player"
-
-    def AverageDexterity(self, Team: str) -> float:
-        party = self.PlayerParty if Team == "Player" else self.EnemyParty
-        vals = [self.EffectiveStat(e, "Dexterity") for e in party if e.Alive]
-        if not vals:
-            return 1.0
-        return sum(vals) / len(vals)
-
-    def ComputeAtpRate(self, Actor: BattleEntity, OpposingDex: Optional[float]) -> float:
-        ref_dex = OpposingDex
-        if ref_dex is None:
-            ref_dex = self.AverageDexterity(self.OpposingTeam(Actor.Team))
-        dex_ratio = PowRatio(self.EffectiveStat(Actor, "Dexterity"), ref_dex)
-        delay = RoundTenths(BaselineAbilityDelay / max(0.15, dex_ratio))
-        return 100.0 / max(0.1, delay)
 
     def GetEntityByTeamIndex(self, Team: str, Index: int) -> Optional[BattleEntity]:
         if Team == "Player":
@@ -560,18 +466,20 @@ class Game:
         return None
 
     def GetNextActor(self) -> Optional[Tuple[str, int, BattleEntity]]:
-        candidates = []
+        Candidates = []
         for i, e in enumerate(self.PlayerParty):
-            if e.Alive and e.Atp >= 100.0:
-                candidates.append(("Player", i, e))
+            if e.Alive:
+                Candidates.append(("Player", i, e))
         for i, e in enumerate(self.EnemyParty):
-            if e.Alive and e.Atp >= 100.0:
-                candidates.append(("Enemy", i, e))
-        if not candidates:
+            if e.Alive:
+                Candidates.append(("Enemy", i, e))
+        if not Candidates:
             return None
-        candidates.sort(key=lambda t: (-t[2].Atp, -self.EffectiveStat(t[2], "Dexterity")))
-        Team, Index, E = candidates[0]
-        return (Team, Index, E)
+        Candidates.sort(key=lambda t: t[2].NextActionTime)
+        Team, Index, E = Candidates[0]
+        if E.NextActionTime <= self.BattleTime + 1e-6:
+            return (Team, Index, E)
+        return None
 
     def FreezeForTurn(self, Team: str, Index: int):
         self.BattleFrozen = True
@@ -580,7 +488,6 @@ class Game:
 
         Actor = self.GetEntityByTeamIndex(Team, Index)
         if Actor and Actor.Alive:
-            Actor.Atp = max(Actor.Atp, 100.0)
             Actor.ApplyTurnRegen()
 
         # default inspect follows active
@@ -625,8 +532,6 @@ class Game:
     def CompleteActionAndScheduleNext(self, Actor: BattleEntity, Target: BattleEntity, AbilityObj: Ability):
         DexRatio = PowRatio(self.EffectiveStat(Actor, "Dexterity"), self.EffectiveStat(Target, "Dexterity"))
         Delay = RoundTenths(AbilityObj.BaseDelay / max(0.15, DexRatio))
-        Actor.Atp = 0.0
-        Actor.AtpRate = 100.0 / max(0.1, Delay)
         Actor.NextActionTime = RoundTenths(self.BattleTime + Delay)
 
         # Decrement 1-turn statuses like Defend at end of actor's turn
@@ -672,20 +577,6 @@ class Game:
                 return
         Inv.append({"Name": ItemName, "Amount": Amount})
 
-    def ConsumeInventoryItem(self, ItemName: str, Amount: int) -> bool:
-        if not self.ActiveSave:
-            return False
-        Inv = self.ActiveSave.get("Inventory", [])
-        for it in Inv:
-            if it.get("Name") == ItemName:
-                if it.get("Amount", 0) < Amount:
-                    return False
-                it["Amount"] -= Amount
-                if it["Amount"] <= 0:
-                    Inv.remove(it)
-                return True
-        return False
-
     def EndBattle(self, PlayerWon: bool):
         self.SubMode = "Battle End"
         self.BattleFrozen = True
@@ -709,9 +600,6 @@ class Game:
 
             self.PersistSave()
 
-        loot_desc = ", ".join([f"{qty}x {name}" for name, qty in LootDrops]) if LootDrops else "None"
-        self.AppendLog(f"Battle ended - {'Victory' if PlayerWon else 'Defeat'}: XP {FormatNumber(TotalXp)}, Gold {FormatNumber(TotalGold)}, Loot {loot_desc}")
-
         self.BattleRewards = {
             "PlayerWon": PlayerWon,
             "TotalXp": TotalXp,
@@ -733,26 +621,9 @@ class Game:
             return pygame.Rect(X0 + Index*(Size+Gap), Y0, Size, Size)
         return pygame.Rect(X0 + Index*(Size+Gap), 445, Size, Size)
 
-    def SidePanelRect(self) -> pygame.Rect:
-        return pygame.Rect(850, 60, 380, 620)
-
     def InspectPanelRect(self) -> pygame.Rect:
-        return self.SidePanelRect()
-
-    def SideContentRect(self) -> pygame.Rect:
-        panel = self.SidePanelRect()
-        return pygame.Rect(panel.x + 10, panel.y + 52, panel.width - 20, panel.height - 62)
-
-    def SideTabRect(self, Index: int) -> pygame.Rect:
-        panel = self.SidePanelRect()
-        pad = 10
-        gap = 8
-        count = max(1, len(self.SideTabs))
-        width = int((panel.width - pad * 2 - gap * (count - 1)) / count)
-        height = 32
-        x = panel.x + pad + Index * (width + gap)
-        y = panel.y + pad
-        return pygame.Rect(x, y, width, height)
+        # below inventory panel
+        return pygame.Rect(850, 430, 380, 270)
 
     # ============================================================
     # Inventory UI
@@ -762,30 +633,7 @@ class Game:
         if not self.ActiveSave:
             return []
         Inv = list(self.ActiveSave.get("Inventory", []))
-        key = self.InventorySortKey
-
-        def sort_tuple(it: Dict):
-            item_obj = self.ItemsByName.get(it["Name"], {})
-            value = int(item_obj.get("Value", 0))
-            tier = int(item_obj.get("Tier", 0))
-            qty = int(it.get("Amount", 0))
-            stack_value = value * qty
-            itype = item_obj.get("Type", "Misc")
-            if key == "Name":
-                return (it["Name"].lower(), )
-            if key == "Value":
-                return (-value, it["Name"].lower())
-            if key == "Quantity":
-                return (-qty, it["Name"].lower())
-            if key == "Stack Value":
-                return (-stack_value, it["Name"].lower())
-            if key == "Tier":
-                return (-tier, it["Name"].lower())
-            if key == "Type":
-                return (itype.lower(), it["Name"].lower())
-            return (it["Name"].lower(), )
-
-        Inv.sort(key=sort_tuple)
+        Inv.sort(key=lambda it: int(self.ItemsByName.get(it["Name"], {"Value": 0})["Value"]) * it["Amount"], reverse=True)
         return Inv
 
     # ============================================================
@@ -918,36 +766,10 @@ class Game:
                     self.DevScroll = 0
                     return
 
-                # Side tabs
-                for i, tab in enumerate(self.SideTabs):
-                    if self.SideTabRect(i).collidepoint(MousePos):
-                        self.ActiveSideTab = tab
-                        return
-
-                # Use item action
-                if self.ActiveSideTab == "Selection" and self.UseItemButtonRect and self.UseItemButtonRect.collidepoint(MousePos):
-                    self.UseSelectedItem()
-                    return
-
-                # Inventory clicks for selection/sorting
-                if self.ActiveSideTab == "Inventory":
-                    btn_rects = self.InventorySortButtonRects(self.SideContentRect())
-                    for key, rect in btn_rects:
-                        if rect.collidepoint(MousePos):
-                            self.InventorySortKey = key
-                            return
-                    if self.ActiveSave:
-                        items = self.GetInventorySorted()
-                        for name, amount, rect in self.InventoryItemRects(self.SideContentRect(), items):
-                            if rect.collidepoint(MousePos):
-                                self.SelectedItemName = name
-                                self.ActiveSideTab = "Selection"
-                                return
-
                 # Target selection click
                 if self.SubMode == "Choose Target":
                     if self.ClickTargetAt(MousePos):
-                        self.ExecutePlayerAction()
+                        self.BeginPlayerQte()
                         return
 
                 # Select inspect entity by clicking boxes (after target selection attempts)
@@ -961,12 +783,10 @@ class Game:
                         return
 
             if Event.type == pygame.MOUSEWHEEL:
-                panel = self.SidePanelRect()
-                if panel.collidepoint(MousePos):
-                    if self.ActiveSideTab == "Inventory":
-                        self.InventoryScroll = max(0, self.InventoryScroll - int(Event.y * 30))
-                    if self.ActiveSideTab == "Log":
-                        self.LogScroll = max(0, self.LogScroll - int(Event.y * 24))
+                # inventory scroll when hovering inventory
+                inv_panel = pygame.Rect(850, 60, 380, 360)
+                if inv_panel.collidepoint(MousePos):
+                    self.InventoryScroll = max(0, self.InventoryScroll - int(Event.y * 30))
 
                 # dev scroll handled in dev mode
 
@@ -977,10 +797,15 @@ class Game:
                     if Event.key == pygame.K_RIGHT:
                         self.SelectedTargetIndex += 1
                     if Event.key == pygame.K_RETURN:
-                        self.ExecutePlayerAction()
+                        self.BeginPlayerQte()
                     if Event.key == pygame.K_ESCAPE:
                         self.SubMode = "Choose Action"
                         self.SelectedAbility = None
+
+                elif self.SubMode == "QTE":
+                    if Event.key == pygame.K_SPACE and not self.QtePressed:
+                        self.QtePressed = True
+                        self.QteResult = self.ResolveQtePress()
 
                 elif self.SubMode == "Battle End":
                     if Event.key in (pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_SPACE):
@@ -1004,12 +829,10 @@ class Game:
         for i, E in enumerate(self.EnemyParty):
             if self.EntityRect("Enemy", i).collidepoint(MousePos):
                 self.InspectSelection = ("Enemy", i)
-                self.SelectedItemName = None
                 return True
         for i, E in enumerate(self.PlayerParty):
             if self.EntityRect("Player", i).collidepoint(MousePos):
                 self.InspectSelection = ("Player", i)
-                self.SelectedItemName = None
                 return True
         return False
 
@@ -1035,7 +858,7 @@ class Game:
             return False
 
         Actor = self.PlayerParty[Index]
-        Panel = self.SideContentRect()
+        Panel = self.InspectPanelRect()
         if not Panel.collidepoint(MousePos):
             return False
 
@@ -1054,10 +877,9 @@ class Game:
                 self.SelectedAbility = AObj
                 self.TargetTeam = self.DetermineTargetTeam(AObj)
                 self.SelectedTargetIndex = 0
-                if AObj.Targeting == "Self":
-                    self.ExecutePlayerAction()
-                else:
-                    self.SubMode = "Choose Target"
+                self.SubMode = "Choose Target" if AObj.Targeting != "Self" else "QTE"
+                if self.SubMode == "QTE":
+                    self.BeginPlayerQte()
                 return True
         return False
 
@@ -1092,11 +914,6 @@ class Game:
 
             # timed buffs tick only while free
             self.TickTimedBuffs(Dt)
-
-            # ATP gain while free
-            for E in self.PlayerParty + self.EnemyParty:
-                if E.Alive:
-                    E.Atp = min(150.0, E.Atp + E.AtpRate * Dt)
 
             nxt = self.GetNextActor()
             if nxt:
@@ -1137,44 +954,48 @@ class Game:
             else:
                 target = random.choice([p for p in self.PlayerParty if p.Alive])
 
-            outcome = self.AccuracyOutcome(Enemy, target) if AObj.Kind == "Attack" else self.GuaranteedOutcome()
+            outcome = self.EnemyVirtualQteAttack(Enemy, target)
             self.ApplyAbility(Enemy, target, AObj, outcome)
             self.CompleteActionAndScheduleNext(Enemy, target, AObj)
 
             self.SubMode = "Free"
             self.BattleFrozen = False
 
+        elif self.SubMode == "QTE":
+            self.TickQte(Dt)
+            if self.QtePressed and self.QteResult:
+                actor = self.PlayerParty[self.ActiveEntityIndex]
+                ability = self.SelectedAbility
+                target = self.GetSelectedTarget() if ability and ability.Targeting != "Self" else actor
+                if actor and ability and target:
+                    self.ApplyAbility(actor, target, ability, self.QteResult)
+                    self.CompleteActionAndScheduleNext(actor, target, ability)
+
+                self.SelectedAbility = None
+                self.SubMode = "Free"
+                self.BattleFrozen = False
+
+                if all(not e.Alive for e in self.EnemyParty):
+                    self.EndBattle(PlayerWon=True)
+                if all(not e.Alive for e in self.PlayerParty):
+                    self.EndBattle(PlayerWon=False)
+
     # ============================================================
-    # Player action execution
+    # Player QTE start
     # ============================================================
 
-    def ExecutePlayerAction(self):
+    def BeginPlayerQte(self):
         actor = self.PlayerParty[self.ActiveEntityIndex]
-        ability = self.SelectedAbility
-        if not ability:
+        if not self.SelectedAbility:
             return
-        if ability.Targeting == "Self":
+        if self.SelectedAbility.Targeting == "Self":
             target = actor
         else:
             target = self.GetSelectedTarget()
-        if not target:
-            return
-
-        outcome = self.GuaranteedOutcome()
-        if ability.Kind == "Attack":
-            outcome = self.AccuracyOutcome(actor, target)
-
-        self.ApplyAbility(actor, target, ability, outcome)
-        self.CompleteActionAndScheduleNext(actor, target, ability)
-
-        self.SelectedAbility = None
-        self.SubMode = "Free"
-        self.BattleFrozen = False
-
-        if all(not e.Alive for e in self.EnemyParty):
-            self.EndBattle(PlayerWon=True)
-        if all(not e.Alive for e in self.PlayerParty):
-            self.EndBattle(PlayerWon=False)
+            if not target:
+                return
+        self.BeginQte(actor, target)
+        self.SubMode = "QTE"
 
     # ============================================================
     # Hover Tooltips
@@ -1196,8 +1017,8 @@ class Game:
                 return
 
         # Inventory items
-        inv_panel = self.SideContentRect()
-        if self.ActiveSideTab == "Inventory" and inv_panel.collidepoint(mp) and self.ActiveSave:
+        inv_panel = pygame.Rect(850, 60, 380, 360)
+        if inv_panel.collidepoint(mp) and self.ActiveSave:
             items = self.GetInventorySorted()
             item_rects = self.InventoryItemRects(inv_panel, items)
             for (name, amount, rect) in item_rects:
@@ -1215,7 +1036,7 @@ class Game:
                     actor = self.GetEntityByTeamIndex(team, idx)
                     if actor:
                         # abilities hover
-                        rects = self.GetInspectAbilityRects(actor, self.SideContentRect())
+                        rects = self.GetInspectAbilityRects(actor, panel)
                         for (ability_name, rect) in rects:
                             if rect.collidepoint(mp):
                                 ab = self.GetAbility(ability_name)
@@ -1264,7 +1085,7 @@ class Game:
         gap = 10
         cols = 3
         out = []
-        start_y = Panel.y + 70 - self.InventoryScroll
+        start_y = Panel.y + 54 - self.InventoryScroll
         for idx, it in enumerate(Items):
             r = idx // cols
             c = idx % cols
@@ -1327,10 +1148,10 @@ class Game:
         pygame.display.flip()
 
     def DrawTitle(self):
-        title = self.FontHuge.render("ATB Battle", True, (240, 240, 240))
+        title = self.FontHuge.render("QTE ATB Battle v2", True, (240, 240, 240))
         self.Screen.blit(title, title.get_rect(center=(ScreenWidth // 2, 150)))
 
-        hint = self.Font.render("Controls: Click abilities/items, ENTER to confirm target, ESC to cancel", True, (200, 200, 200))
+        hint = self.Font.render("Keyboard: SPACE for QTE, ENTER to confirm target", True, (200, 200, 200))
         self.Screen.blit(hint, hint.get_rect(center=(ScreenWidth // 2, 200)))
 
         for b in self.TitleButtons:
@@ -1341,16 +1162,10 @@ class Game:
             txt = self.FontSmall.render(f"Loaded: {s['Slot']}   Gold: {FormatNumber(s.get('Gold',0))}", True, (200,200,200))
             self.Screen.blit(txt, (20, ScreenHeight - 30))
 
-        build = self.FontSmall.render(f"Build: {self.BuildLabel}", True, (150, 150, 150))
-        self.Screen.blit(build, (20, ScreenHeight - 52))
-
     def DrawBattle(self):
         # Top time display (round only on display)
         t = self.FontSmall.render(f"Battle Time: {self.BattleTime:.1f}s", True, (220,220,220))
         self.Screen.blit(t, (20, 10))
-
-        build = self.FontSmall.render(f"Build: {self.BuildLabel}", True, (150,150,150))
-        self.Screen.blit(build, (20, 28))
 
         # DEV button
         self.DevButton.Draw(self.Screen, self.FontSmall)
@@ -1359,14 +1174,21 @@ class Game:
         self.DrawParty("Enemy", self.EnemyParty)
         self.DrawParty("Player", self.PlayerParty)
 
-        # Side panel with tabs
-        self.DrawSidePanel()
+        # Inventory panel
+        self.DrawInventoryPanel()
+
+        # Inspect panel
+        self.DrawInspectPanel()
 
         # Floating numbers
         for f in self.FloatingNumbers:
             font = pygame.font.Font(FontName, f.Size)
             s = font.render(f.Text, True, f.Color)
             self.Screen.blit(s, s.get_rect(center=(int(f.X), int(f.Y))))
+
+        # QTE overlay
+        if self.SubMode == "QTE":
+            self.DrawQte()
 
         # Battle end rewards
         if self.SubMode == "Battle End":
@@ -1377,7 +1199,7 @@ class Game:
             R = self.EntityRect(Team, i)
 
             # highlight if active actor
-            is_active = (self.BattleFrozen and self.ActiveTeam == Team and self.ActiveEntityIndex == i and self.SubMode in ("Choose Action","Choose Target","Enemy Act"))
+            is_active = (self.BattleFrozen and self.ActiveTeam == Team and self.ActiveEntityIndex == i and self.SubMode in ("Choose Action","Choose Target","QTE","Enemy Act"))
             border_col = (220, 220, 120) if is_active else (110, 110, 125)
 
             # target highlight during target selection
@@ -1417,9 +1239,13 @@ class Game:
             atb_rect = pygame.Rect(R.x + 8, R.y - 16, atb_w, 8)
             pygame.draw.rect(self.Screen, (20,20,22), atb_rect, border_radius=6)
 
-            readiness = int(Clamp(E.Atp, 0.0, 150.0))
+            # show as /100 based on time until action (0 ready => 100)
+            # when frozen, show current readiness
+            remain = max(0.0, E.NextActionTime - self.BattleTime)
+            # map remain to readiness. If remain >= 5 => 0, if 0 => 100
+            readiness = int(Clamp(100.0 * (1.0 - Clamp(remain / 5.0, 0.0, 1.0)), 0.0, 100.0))
             pygame.draw.rect(self.Screen, (90, 200, 120), pygame.Rect(atb_rect.x, atb_rect.y, int(atb_rect.w * readiness / 100.0), atb_rect.h), border_radius=6)
-            atb_txt = self.FontSmall.render(f"{min(100, readiness)}/100", True, (240,240,240))
+            atb_txt = self.FontSmall.render(f"{readiness}/100", True, (240,240,240))
             self.Screen.blit(atb_txt, atb_txt.get_rect(center=(R.centerx, atb_rect.centery)))
 
             # bars under box
@@ -1481,76 +1307,53 @@ class Game:
             txt = self.FontSmall.render(label, True, (235,235,235))
             self.Screen.blit(txt, txt.get_rect(midleft=(rr.x + 6, rr.centery)))
 
-    def DrawSidePanel(self):
-        panel = self.SidePanelRect()
+    def DrawInventoryPanel(self):
+        panel = pygame.Rect(850, 60, 380, 360)
         pygame.draw.rect(self.Screen, (18,18,22), panel, border_radius=14)
         pygame.draw.rect(self.Screen, (120,120,140), panel, width=2, border_radius=14)
 
-        self.UseItemButtonRect = None
+        gold = self.ActiveSave.get("Gold", 0) if self.ActiveSave else 0
+        title = self.Font.render(f"Inventory   Gold: {FormatNumber(gold)}", True, (240,240,240))
+        self.Screen.blit(title, (panel.x + 14, panel.y + 12))
 
-        # Tabs
-        for i, tab in enumerate(self.SideTabs):
-            r = self.SideTabRect(i)
-            is_active = (tab == self.ActiveSideTab)
-            pygame.draw.rect(self.Screen, (40,40,52) if is_active else (28,28,34), r, border_radius=10)
-            pygame.draw.rect(self.Screen, (150,180,255) if is_active else (110,110,130), r, width=2, border_radius=10)
-            t = self.FontSmall.render(tab, True, (240,240,240))
-            self.Screen.blit(t, t.get_rect(center=r.center))
-
-        content = self.SideContentRect()
-
-        if self.ActiveSideTab == "Selection":
-            self.DrawSelectionTab(content)
-        elif self.ActiveSideTab == "Inventory":
-            self.DrawInventoryTab(content)
-        elif self.ActiveSideTab == "Log":
-            self.DrawLogTab(content)
-
-    def DrawSelectionTab(self, content: pygame.Rect):
-        pygame.draw.rect(self.Screen, (24,24,30), content, border_radius=10)
-
-        # Item selection display
-        if self.SelectedItemName:
-            amt = 0
-            if self.ActiveSave:
-                for it in self.ActiveSave.get("Inventory", []):
-                    if it["Name"] == self.SelectedItemName:
-                        amt = int(it.get("Amount", 0))
-                        break
-            lines = self.ItemTooltipLines(self.SelectedItemName, amt)
-            item_obj = self.ItemsByName.get(self.SelectedItemName, {})
-            item_type = item_obj.get("Type", "Misc")
-            lines.insert(3, f"Type: {item_type}")
-            y = content.y + 12
-            for L in lines:
-                s = self.FontSmall.render(L, True, (230,230,230))
-                self.Screen.blit(s, (content.x + 12, y))
-                y += 18
-
-            can_use = (
-                self.SubMode == "Choose Action"
-                and self.ActiveTeam == "Player"
-                and amt > 0
-            )
-            if can_use:
-                btn = pygame.Rect(content.x + 12, content.bottom - 44, content.width - 24, 32)
-                pygame.draw.rect(self.Screen, (40,90,50), btn, border_radius=10)
-                pygame.draw.rect(self.Screen, (120,200,140), btn, width=2, border_radius=10)
-                t = self.FontSmall.render("Use Item", True, (240,240,240))
-                self.Screen.blit(t, t.get_rect(center=btn.center))
-                self.UseItemButtonRect = btn
+        if not self.ActiveSave:
             return
 
+        items = self.GetInventorySorted()
+        rects = self.InventoryItemRects(panel, items)
+        for name, amount, r in rects:
+            # clip draw to panel
+            if r.bottom < panel.y + 50 or r.y > panel.bottom - 10:
+                continue
+
+            pygame.draw.rect(self.Screen, (40,40,48), r, border_radius=12)
+            pygame.draw.rect(self.Screen, (110,110,130), r, width=2, border_radius=12)
+
+            # item name centered
+            nm = self.FontSmall.render(name, True, (240,240,240))
+            self.Screen.blit(nm, nm.get_rect(center=r.center))
+
+            # amount upper-right
+            amt = self.FontSmall.render(str(amount), True, (240,240,240))
+            self.Screen.blit(amt, amt.get_rect(topright=(r.right - 6, r.top + 4)))
+
+    def DrawInspectPanel(self):
+        panel = self.InspectPanelRect()
+        pygame.draw.rect(self.Screen, (18,18,22), panel, border_radius=14)
+        pygame.draw.rect(self.Screen, (120,120,140), panel, width=2, border_radius=14)
+
+        header = self.Font.render("Inspect", True, (240,240,240))
+        self.Screen.blit(header, (panel.x + 14, panel.y + 10))
+
         if not self.InspectSelection:
-            tip = self.FontSmall.render("Select an entity or item to inspect.", True, (220,220,220))
-            self.Screen.blit(tip, (content.x + 12, content.y + 12))
             return
         team, idx = self.InspectSelection
         ent = self.GetEntityByTeamIndex(team, idx)
         if not ent:
             return
 
-        y = content.y + 12
+        # Basic info
+        y = panel.y + 44
         lines = [
             f"{ent.Name}  (Level {ent.Level})",
             f"Vitality: {FormatNumber(int(self.EffectiveStat(ent,'Vitality')))}",
@@ -1560,17 +1363,19 @@ class Game:
         ]
         for L in lines:
             s = self.FontSmall.render(L, True, (220,220,220))
-            self.Screen.blit(s, (content.x + 12, y))
+            self.Screen.blit(s, (panel.x + 14, y))
             y += 18
 
-        y += 8
+        # Abilities section
+        y += 4
         s = self.Font.render("Abilities", True, (240,240,240))
-        self.Screen.blit(s, (content.x + 12, y))
+        self.Screen.blit(s, (panel.x + 14, y))
         y += 26
 
-        rects = self.GetInspectAbilityRects(ent, content)
+        # Abilities list (clickable if player and their turn)
+        rects = self.GetInspectAbilityRects(ent, panel)
         for ability_name, rr in rects:
-            if rr.bottom > content.bottom - 10:
+            if rr.bottom > panel.bottom - 10:
                 break
             ab = self.GetAbility(ability_name)
             can_click = True
@@ -1604,10 +1409,12 @@ class Game:
                 tag = self.FontSmall.render(disabled_reason, True, (255,170,120))
                 self.Screen.blit(tag, tag.get_rect(midright=(rr.right - 8, rr.centery)))
 
+        # Drop table for enemies
         if team == "Enemy":
-            drop_y = min(content.bottom - 70, content.y + 260)
+            y2 = panel.y + 44
+            drop_y = panel.y + panel.height - 70
             s2 = self.Font.render("Drop Table", True, (240,240,240))
-            self.Screen.blit(s2, (content.x + 12, drop_y))
+            self.Screen.blit(s2, (panel.x + 14, drop_y))
             dy = drop_y + 24
             for entry in ent.DropTable[:3]:
                 qty = entry["Quantity"]
@@ -1616,61 +1423,44 @@ class Game:
                 den = entry["Chance Denominator"]
                 line = f"{qty}x {item}  ({num}/{den})"
                 ss = self.FontSmall.render(line, True, (220,220,220))
-                self.Screen.blit(ss, (content.x + 12, dy))
+                self.Screen.blit(ss, (panel.x + 14, dy))
                 dy += 18
 
-    def InventorySortButtonRects(self, content: pygame.Rect) -> List[Tuple[str, pygame.Rect]]:
-        buttons = ["Name", "Value", "Quantity", "Stack Value", "Tier", "Type"]
-        rects = []
-        x = content.x
-        y = content.y + 8
-        h = 28
-        gap = 6
-        for b in buttons:
-            w = max(80, self.FontSmall.render(b, True, (0,0,0)).get_width() + 20)
-            rects.append((b, pygame.Rect(x, y, w, h)))
-            x += w + gap
-        return rects
+    def DrawQte(self):
+        # dim background
+        overlay = pygame.Surface((ScreenWidth, ScreenHeight), pygame.SRCALPHA)
+        overlay.fill((0,0,0,150))
+        self.Screen.blit(overlay, (0,0))
 
-    def DrawInventoryTab(self, content: pygame.Rect):
-        pygame.draw.rect(self.Screen, (24,24,30), content, border_radius=10)
+        cx, cy = ScreenWidth // 2, ScreenHeight // 2 + 10
 
-        gold = self.ActiveSave.get("Gold", 0) if self.ActiveSave else 0
-        title = self.Font.render(f"Inventory   Gold: {FormatNumber(gold)}", True, (240,240,240))
-        self.Screen.blit(title, (content.x + 12, content.y + 6))
+        # ring zones
+        center = self.QteRadii["Center"]
+        vital = self.QteRadii["VitalOuter"]
+        crit = self.QteRadii["CritOuter"]
+        hit = self.QteRadii["HitOuter"]
 
-        btn_rects = self.InventorySortButtonRects(content)
-        for key, r in btn_rects:
-            active = (self.InventorySortKey == key)
-            pygame.draw.rect(self.Screen, (50,60,80) if active else (34,34,40), r, border_radius=8)
-            pygame.draw.rect(self.Screen, (150,180,255) if active else (110,110,130), r, width=2, border_radius=8)
-            t = self.FontSmall.render(key, True, (240,240,240))
-            self.Screen.blit(t, t.get_rect(center=r.center))
+        # draw static rings
+        pygame.draw.circle(self.Screen, (90,90,100), (cx,cy), int(hit), width=3)
+        pygame.draw.circle(self.Screen, (120,120,140), (cx,cy), int(crit), width=3)
+        pygame.draw.circle(self.Screen, (150,140,80), (cx,cy), int(vital), width=3)
+        pygame.draw.circle(self.Screen, (120,120,120), (cx,cy), int(center), width=3)
 
-        if not self.ActiveSave:
-            return
+        # labels
+        self.Screen.blit(self.FontSmall.render("HIT", True, (220,220,220)), (cx + hit + 10, cy - 8))
+        self.Screen.blit(self.FontSmall.render("CRIT", True, (255,235,80)), (cx + crit + 10, cy - 8))
+        self.Screen.blit(self.FontSmall.render("VITAL", True, (255,80,80)), (cx + vital + 10, cy - 8))
 
-        items = self.GetInventorySorted()
-        rects = self.InventoryItemRects(content, items)
-        for name, amount, r in rects:
-            if r.bottom < content.y + 60 or r.y > content.bottom - 10:
-                continue
-            pygame.draw.rect(self.Screen, (40,40,48), r, border_radius=12)
-            pygame.draw.rect(self.Screen, (110,110,130), r, width=2, border_radius=12)
-            nm = self.FontSmall.render(name, True, (240,240,240))
-            self.Screen.blit(nm, nm.get_rect(center=r.center))
-            amt = self.FontSmall.render(str(amount), True, (240,240,240))
-            self.Screen.blit(amt, amt.get_rect(topright=(r.right - 6, r.top + 4)))
+        # moving ring
+        rr = int(max(1, self.QteRadius))
+        pygame.draw.circle(self.Screen, (240,240,240), (cx,cy), rr, width=6)
 
-    def DrawLogTab(self, content: pygame.Rect):
-        pygame.draw.rect(self.Screen, (24,24,30), content, border_radius=10)
-        log = self.GetLog()
-        y = content.y + 8 - self.LogScroll
-        for entry in log:
-            txt = self.FontSmall.render(entry, True, (230,230,230))
-            if y + txt.get_height() > content.y and y < content.bottom:
-                self.Screen.blit(txt, (content.x + 10, y))
-            y += txt.get_height() + 6
+        tip = self.Font.render("Press SPACE on the ring timing", True, (240,240,240))
+        self.Screen.blit(tip, tip.get_rect(center=(cx, cy - hit - 50)))
+
+        if self.QtePressed and self.QteResult:
+            res = self.FontHuge.render(self.QteResult, True, (255,80,80) if self.QteResult=="Vital" else (255,235,80) if self.QteResult=="Crit" else (240,240,240))
+            self.Screen.blit(res, res.get_rect(center=(cx, cy + hit + 55)))
 
     def DrawBattleEnd(self):
         overlay = pygame.Surface((ScreenWidth, ScreenHeight), pygame.SRCALPHA)
