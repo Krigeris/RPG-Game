@@ -674,7 +674,7 @@ class Game:
             f"{Desc}",
         ]
 
-    def AbilityTooltipLines(self, Actor: BattleEntity, AbilityObj: Ability, disabled_reason: str="") -> List[str]:
+    def AbilityTooltipLines(self, Actor: BattleEntity, AbilityObj: Ability, DisabledReason: str="") -> List[str]:
         Lines = [
             f"{AbilityObj.Name}",
             f"{AbilityObj.Kind} • {AbilityObj.Targeting}",
@@ -688,9 +688,9 @@ class Game:
         if AbilityObj.Kind == "Passive":
             Lines.append("")
             Lines.append("(Passive)")
-        if disabled_reason:
+        if DisabledReason:
             Lines.append("")
-            Lines.append(disabled_reason)
+            Lines.append(DisabledReason)
         return Lines
 
     # ============================================================
